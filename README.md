@@ -1,1 +1,1 @@
-\n# DailyUnplash\n\n占位 README（你可在 GitHub 上直接编辑此文件补充内容）。\n
+The Unsplash API information in [logseq-banners-plugin](https://github.com/yoyurec/logseq-banners-plugin) has expired, so I wrote a solution and designed a WebUI style for it.
