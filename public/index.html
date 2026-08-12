@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Logseq Banner 图片选取器</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #1a1d24;
+    --border: #2a2e38;
+    --text: #e6e8ee;
+    --muted: #8b91a0;
+    --accent: #4f8cff;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px 16px 48px;
+  }
+  h1 { font-size: 18px; font-weight: 600; margin-bottom: 4px; }
+  .hint { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
+  .controls {
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    margin-bottom: 10px;
+    background: var(--panel); border: 1px solid var(--border);
+    padding: 10px 14px; border-radius: 10px;
+  }
+  .controls label { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .controls input, .controls select {
+    padding: 6px 8px; border-radius: 6px;
+    border: 1px solid var(--border); background: var(--bg); color: var(--text);
+    font-size: 13px;
+  }
+  .controls input[type="number"] { width: 72px; }
+  .controls input[type="text"] { width: 130px; }
+  button {
+    padding: 7px 16px; border-radius: 6px; border: none;
+    background: var(--accent); color: #fff; font-size: 13px; cursor: pointer;
+  }
+  button:hover { filter: brightness(1.12); }
+  #unsplash-filters { display: none; }
+  .filter-note { font-size: 12px; color: var(--muted); margin-bottom: 12px; display: none; }
+  .stage {
+    width: 100%; max-width: 1100px;
+    border: 1px solid var(--border); border-radius: 12px;
+    overflow: hidden; background: var(--panel);
+    position: relative;
+    cursor: context-menu;
+  }
+  .stage img {
+    display: block; width: 100%;
+    aspect-ratio: var(--ratio, 1600 / 500);
+    object-fit: cover;
+  }
+  .stage .overlay {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(0,0,0,.35); color: #fff; font-size: 14px;
+    opacity: 0; transition: opacity .15s; pointer-events: none;
+  }
+  .stage.loading .overlay { opacity: 1; }
+  .meta {
+    margin-top: 12px; font-size: 13px; color: var(--muted);
+    display: flex; gap: 18px; flex-wrap: wrap; justify-content: center;
+  }
+  .meta a { color: var(--accent); text-decoration: none; }
+  /* 自定义右键菜单 */
+  #ctx-menu {
+    position: fixed; z-index: 999; min-width: 260px;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 6px; display: none;
+    box-shadow: 0 12px 32px rgba(0,0,0,.5);
+  }
+  #ctx-menu .item {
+    padding: 9px 12px; border-radius: 6px; cursor: pointer;
+    font-size: 13px; display: flex; justify-content: space-between; gap: 16px;
+  }
+  #ctx-menu .item:hover { background: var(--accent); color: #fff; }
+  #ctx-menu .item .dim { color: var(--muted); font-size: 12px; }
+  #ctx-menu .item:hover .dim { color: rgba(255,255,255,.75); }
+  #ctx-menu .sep { height: 1px; background: var(--border); margin: 5px 8px; }
+  /* toast */
+  #toast {
+    position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%);
+    background: var(--panel); border: 1px solid var(--accent);
+    color: var(--text); font-size: 12px; padding: 10px 16px;
+    border-radius: 8px; display: none; max-width: 90vw;
+    word-break: break-all; z-index: 1000; white-space: pre-line;
+  }
+</style>
+</head>
+<body>
+  <h1>Logseq Banner 图片选取器</h1>
+  <p class="hint">刷新页面自动换一张 · 在图片上<b>右键</b>可复制地址（原图 / Banner 尺寸）· Shift+右键打开浏览器原生菜单</p>
+
+  <div class="controls">
+    <label>图源
+      <select id="source">
+        <option value="picsum">Lorem Picsum（无需 Key）</option>
+        <option value="unsplash">Unsplash</option>
+      </select>
+    </label>
+    <label>Banner 宽 <input id="bw" type="number" min="50" step="10"></label>
+    <label>高 <input id="bh" type="number" min="50" step="10"></label>
+    <button id="apply">应用尺寸</button>
+    <button id="next">换一张</button>
+  </div>
+
+  <div class="controls" id="unsplash-filters">
+    <label>关键词 <input id="uquery" type="text" placeholder="如 sea, mountain"></label>
+    <label>方向
+      <select id="uorientation">
+        <option value="">任意</option>
+        <option value="landscape" selected>横向 landscape</option>
+        <option value="portrait">纵向 portrait</option>
+        <option value="squarish">方形 squarish</option>
+      </select>
+    </label>
+    <label>颜色
+      <select id="ucolor">
+        <option value="">任意</option>
+        <option value="black_and_white">黑白</option>
+        <option value="black">黑</option>
+        <option value="white">白</option>
+        <option value="yellow">黄</option>
+        <option value="orange">橙</option>
+        <option value="red">红</option>
+        <option value="purple">紫</option>
+        <option value="magenta">品红</option>
+        <option value="green">绿</option>
+        <option value="teal">青</option>
+        <option value="blue">蓝</option>
+      </select>
+    </label>
+    <label>主题
+      <select id="utopics"><option value="">任意</option></select>
+    </label>
+    <label>合集
+      <select id="ucollection">
+        <option value="">任意</option>
+        <option value="1093245">Wallpaper（1294 张）</option>
+        <option value="8253647">places.（10108 张）</option>
+        <option value="1996132">Seaside . Coast（488 张）</option>
+        <option value="9407588">sand &amp; sea（118 张）</option>
+        <option value="zdOjTEbOjYo">Black + White（611 张）</option>
+        <option value="32077960">Neon（2817 张）</option>
+        <option value="UuoWIy69ijc">Technology（510 张）</option>
+        <option value="__custom">自定义 ID…</option>
+      </select>
+    </label>
+    <label id="ucollection-custom-wrap" style="display:none">合集 ID
+      <input id="ucollection-custom" type="text" placeholder="数字/字母 ID，逗号分隔">
+    </label>
+    <label>内容分级
+      <select id="ucontent">
+        <option value="low" selected>low（默认）</option>
+        <option value="high">high（严格）</option>
+      </select>
+    </label>
+  </div>
+  <p class="filter-note" id="filter-note">注：关键词/方向/主题/合集/内容分级走 random 接口（真随机）；一旦选了颜色则走搜索接口（需配关键词，主题不生效）。筛选变更后自动换一张。</p>
+
+  <div class="stage loading" id="stage">
+    <img id="photo" alt="banner preview" crossorigin="anonymous">
+    <div class="overlay">加载中…</div>
+  </div>
+
+  <div class="meta" id="meta"></div>
+
+  <div id="ctx-menu">
+    <div class="item" id="copy-original">复制原图地址 <span class="dim" id="dim-original"></span></div>
+    <div class="item" id="copy-banner">复制 Banner 尺寸地址 <span class="dim" id="dim-banner"></span></div>
+    <div class="sep"></div>
+    <div class="item" id="ctx-next">换一张</div>
+  </div>
+
+  <div id="toast"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  var LS_SIZE = "banner-tool-size";
+  var LS_SOURCE = "banner-tool-source";
+  var DEFAULT_SIZE = { w: 1600, h: 500 };
+
+  var stage = document.getElementById("stage");
+  var photo = document.getElementById("photo");
+  var meta = document.getElementById("meta");
+  var menu = document.getElementById("ctx-menu");
+  var toast = document.getElementById("toast");
+  var bwInput = document.getElementById("bw");
+  var bhInput = document.getElementById("bh");
+  var sourceSel = document.getElementById("source");
+
+  var size = loadSize();
+  var current = null; // { originalUrl, bannerUrlBase, origW, origH, author, link, sourceLabel }
+
+  bwInput.value = size.w;
+  bhInput.value = size.h;
+
+  sourceSel.value = localStorage.getItem(LS_SOURCE) || "picsum";
+
+  function loadSize() {
+    try {
+      var s = JSON.parse(localStorage.getItem(LS_SIZE));
+      if (s && s.w > 0 && s.h > 0) return s;
+    } catch (e) {}
+    return Object.assign({}, DEFAULT_SIZE);
+  }
+
+  function randomSeed() {
+    return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  }
+
+  function bannerUrlOf(urlBase) {
+    // urlBase: picsum -> ".../id/{id}"；unsplash -> urls.raw（含 query）
+    if (sourceSel.value === "unsplash") {
+      return urlBase + "&w=" + size.w + "&h=" + size.h + "&fit=crop&crop=entropy&auto=format";
+    }
+    return urlBase + "/" + size.w + "/" + size.h;
+  }
+
+  /* ---------- 加载：Picsum ---------- */
+  function loadPicsum() {
+    return fetch("https://picsum.photos/seed/" + randomSeed() + "/info")
+      .then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(function (info) {
+        current = {
+          originalUrl: info.download_url,
+          bannerUrlBase: "https://picsum.photos/id/" + info.id,
+          origW: info.width,
+          origH: info.height,
+          author: info.author,
+          link: "https://picsum.photos/id/" + info.id + "/info",
+          sourceLabel: "Picsum #" + info.id
+        };
+      });
+  }
+
+  /* ---------- 加载：Unsplash（经本站 /api 代理，key 在服务端） ---------- */
+  function unsplashFetch(path, params) {
+    var qs = Object.keys(params)
+      .filter(function (k) { return params[k]; })
+      .map(function (k) { return k + "=" + encodeURIComponent(params[k]); })
+      .join("&");
+    return fetch("/api" + path + (qs ? "?" + qs : ""))
+      .then(function (r) {
+        if (!r.ok) {
+          return r.json().then(function (data) {
+            throw new Error((data && data.error) || ("HTTP " + r.status));
+          }, function () {
+            throw new Error("HTTP " + r.status);
+          });
+        }
+        return r.json();
+      });
+  }
+
+  function adoptUnsplashPhoto(p) {
+    current = {
+      originalUrl: p.urls.raw,
+      bannerUrlBase: p.urls.raw,
+      origW: p.width,
+      origH: p.height,
+      author: p.user.name,
+      link: p.links.html,
+      sourceLabel: "Unsplash · " + (p.alt_description || p.id)
+    };
+  }
+
+  function getCollectionIds() {
+    var v = document.getElementById("ucollection").value;
+    if (v === "__custom") {
+      // 只保留合法字符：字母数字、连字符、下划线、逗号
+      return document.getElementById("ucollection-custom").value
+        .replace(/[^A-Za-z0-9_\-,]/g, "")
+        .replace(/,+/g, ",")
+        .replace(/^,|,$/g, "");
+    }
+    return v;
+  }
+
+  function loadUnsplash() {
+    var query = document.getElementById("uquery").value.trim();
+    var color = document.getElementById("ucolor").value;
+    var orientation = document.getElementById("uorientation").value;
+    var topics = document.getElementById("utopics").value;
+    var content = document.getElementById("ucontent").value;
+    var collections = getCollectionIds();
+
+    // 颜色只在 /search/photos 上支持，且该接口必须有 query
+    if (color) {
+      var page = 1 + Math.floor(Math.random() * 8); // 随机翻页打散结果
+      return unsplashFetch("/search", {
+        query: query || "wallpaper",
+        color: color,
+        orientation: orientation,
+        collections: collections,
+        content_filter: content,
+        per_page: 30,
+        page: page
+      }).then(function (data) {
+        if (!data.results || !data.results.length) throw new Error("没有匹配结果，放宽筛选条件试试");
+        var p = data.results[Math.floor(Math.random() * data.results.length)];
+        adoptUnsplashPhoto(p);
+      });
+    }
+    // /photos/random 支持 query / orientation / topics / collections / content_filter
+    return unsplashFetch("/random", {
+      query: query,
+      orientation: orientation,
+      topics: topics,
+      collections: collections,
+      content_filter: content
+    }).then(adoptUnsplashPhoto);
+  }
+
+  function loadTopics() {
+    unsplashFetch("/topics", { per_page: 30 })
+      .then(function (list) {
+        var sel = document.getElementById("utopics");
+        var cur = sel.value;
+        sel.innerHTML = '<option value="">任意</option>';
+        list.forEach(function (t) {
+          var o = document.createElement("option");
+          o.value = t.slug;
+          o.textContent = t.title;
+          sel.appendChild(o);
+        });
+        sel.value = cur;
+      })
+      .catch(function () { /* 主题列表加载失败不阻塞 */ });
+  }
+
+  function loadRandom() {
+    hideMenu();
+    stage.classList.add("loading");
+    meta.textContent = "";
+    var loader = sourceSel.value === "unsplash" ? loadUnsplash : loadPicsum;
+    Promise.resolve()
+      .then(loader)
+      .then(render)
+      .catch(function (err) {
+        stage.classList.remove("loading");
+        showToast("加载失败：" + err.message);
+      });
+  }
+
+  function render() {
+    document.documentElement.style.setProperty("--ratio", size.w + " / " + size.h);
+    photo.onload = function () { stage.classList.remove("loading"); };
+    photo.onerror = function () { stage.classList.remove("loading"); showToast("图片加载失败，点击「换一张」重试"); };
+    photo.src = bannerUrlOf(current.bannerUrlBase);
+    meta.innerHTML =
+      "<span>原图 " + current.origW + "×" + current.origH + "</span>" +
+      "<span>Banner " + size.w + "×" + size.h + "</span>" +
+      "<span>作者 " + current.author + "</span>" +
+      '<a href="' + current.link + '" target="_blank" rel="noopener">' + current.sourceLabel + "</a>";
+  }
+
+  /* ---------- 复制 ---------- */
+  function copyText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(
+        function () { showToast("已复制：\n" + text); },
+        function () { legacyCopy(text); }
+      );
+    } else {
+      legacyCopy(text);
+    }
+  }
+  function legacyCopy(text) {
+    var ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      document.execCommand("copy");
+      showToast("已复制：\n" + text);
+    } catch (e) {
+      showToast("复制失败，请手动复制：\n" + text);
+    }
+    document.body.removeChild(ta);
+  }
+
+  var toastTimer = null;
+  function showToast(msg) {
+    toast.textContent = msg;
+    toast.style.display = "block";
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { toast.style.display = "none"; }, 3000);
+  }
+
+  /* ---------- 右键菜单 ---------- */
+  function showMenu(x, y) {
+    if (!current) return;
+    document.getElementById("dim-original").textContent = current.origW + "×" + current.origH;
+    document.getElementById("dim-banner").textContent = size.w + "×" + size.h;
+    menu.style.display = "block";
+    var mw = menu.offsetWidth, mh = menu.offsetHeight;
+    menu.style.left = Math.min(x, window.innerWidth - mw - 8) + "px";
+    menu.style.top = Math.min(y, window.innerHeight - mh - 8) + "px";
+  }
+  function hideMenu() { menu.style.display = "none"; }
+
+  stage.addEventListener("contextmenu", function (e) {
+    if (e.shiftKey) return;
+    e.preventDefault();
+    showMenu(e.clientX, e.clientY);
+  });
+  document.addEventListener("click", hideMenu);
+  document.addEventListener("scroll", hideMenu, true);
+  window.addEventListener("resize", hideMenu);
+
+  document.getElementById("copy-original").addEventListener("click", function () {
+    copyText(current.originalUrl); hideMenu();
+  });
+  document.getElementById("copy-banner").addEventListener("click", function () {
+    copyText(bannerUrlOf(current.bannerUrlBase)); hideMenu();
+  });
+  document.getElementById("ctx-next").addEventListener("click", loadRandom);
+
+  /* ---------- 控件 ---------- */
+  document.getElementById("apply").addEventListener("click", function () {
+    var w = parseInt(bwInput.value, 10), h = parseInt(bhInput.value, 10);
+    if (!(w > 0 && h > 0)) { showToast("尺寸无效"); return; }
+    size = { w: w, h: h };
+    localStorage.setItem(LS_SIZE, JSON.stringify(size));
+    if (current) {
+      stage.classList.add("loading");
+      render();
+    }
+  });
+  document.getElementById("next").addEventListener("click", loadRandom);
+
+  sourceSel.addEventListener("change", function () {
+    localStorage.setItem(LS_SOURCE, sourceSel.value);
+    syncSourceUI();
+    loadRandom();
+  });
+
+  document.getElementById("ucollection").addEventListener("change", function () {
+    var custom = this.value === "__custom";
+    document.getElementById("ucollection-custom-wrap").style.display = custom ? "flex" : "none";
+    if (!custom) loadRandom(); // 自定义模式等输入完再触发
+  });
+  document.getElementById("ucollection-custom").addEventListener("change", loadRandom);
+
+  ["uquery", "uorientation", "ucolor", "utopics", "ucontent"].forEach(function (id) {
+    document.getElementById(id).addEventListener("change", loadRandom);
+  });
+
+  function syncSourceUI() {
+    var isUnsplash = sourceSel.value === "unsplash";
+    document.getElementById("unsplash-filters").style.display = isUnsplash ? "flex" : "none";
+    document.getElementById("filter-note").style.display = isUnsplash ? "block" : "none";
+    if (isUnsplash) loadTopics();
+  }
+
+  syncSourceUI();
+  loadRandom();
+})();
+</script>
+</body>
+</html>
